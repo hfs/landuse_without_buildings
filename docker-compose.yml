@@ -1,0 +1,15 @@
+version: "3.8"
+services:
+  unmapped_census:
+    build: .
+    volumes:
+      - .:/app
+    entrypoint: ./run.sh
+  census_postgres:
+    image: "postgis/postgis:13-3.0"
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: "postgres"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
