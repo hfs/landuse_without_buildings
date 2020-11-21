@@ -103,7 +103,7 @@ The output file is `data/unmapped_census_fixed.geojson`.
 
 ### Running manually
 
-Install PostgreSQL, `osm2pgsql`, `osmconvert` and `osmfilter` (package
+Install PostgreSQL, PostGIS, `osm2pgsql`, `osmconvert` and `osmfilter` (package
 `osmctools`) and `npm`.
 
 Install [geojson-rewind](https://github.com/mapbox/geojson-rewind)
