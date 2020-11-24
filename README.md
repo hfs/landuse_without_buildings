@@ -65,7 +65,7 @@ should be looked at for sure.
 ![Map of filtered census cells](doc/remaining_cells.jpg)
 
 Finally identify clusters of touching squares and merge them into single
-polygons to identify one connected are that should become a task.
+polygons to identify each connected area that should become one task.
 
 The polygons are filtered once more to include only those which are larger than
 one cell and contain at least 12 people. This is done to avoid false positives
@@ -121,7 +121,8 @@ The source code of this project is licensed under the terms of the
 [MIT license](LICENSE).
 
 The census data may be used for derivative works, if you mention the source
-“Statistisches Bundesamt (www.destatis.de)”. See their
+“Statistisches Bundesamt ([www.destatis.de](https://www.destatis.de/))”. See
+their
 [imprint](https://www.zensus2011.de/DE/Service/Impressum/impressum_node.html)
 for details.
 
