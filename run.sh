@@ -5,7 +5,6 @@ cd "$basedir"
 
 ./01_download.sh
 ./02_createdb.sh
-./03_import_census.sh
-./04_import_osm.sh
-./05_analyze.sh
-./06_export_geojson.sh
+./03_import_osm.sh
+./04_analyze.sh
+./05_export_csv.sh

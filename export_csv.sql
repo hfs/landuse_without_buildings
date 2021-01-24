@@ -1,0 +1,1 @@
+\COPY (SELECT state, county, 'https://www.openstreetmap.org/' || (CASE WHEN area_id < 0 THEN 'relation/' || (-area_id)::text ELSE 'way/' || area_id::text END) || '/' AS url, ROUND(area)::int AS area FROM landuse_export ORDER BY state, county, area DESC) TO STDOUT (FORMAT csv)
