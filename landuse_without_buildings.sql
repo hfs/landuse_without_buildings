@@ -1,3 +1,10 @@
+\echo >>> Calculate area of landuse
+ALTER TABLE landuse DROP COLUMN IF EXISTS area;
+ALTER TABLE landuse ADD COLUMN area float;
+UPDATE landuse SET area = ST_Area(ST_Transform(geom, 4326)::geography, true) ;
+CREATE INDEX ON landuse(area);
+
+\echo >>> Filter landuse without buildings
 DROP TABLE IF EXISTS landuse_without_buildings;
 CREATE TABLE landuse_without_buildings AS
 SELECT l.*
@@ -5,13 +12,13 @@ FROM landuse l LEFT JOIN building b
 ON ST_Intersects(l.geom, b.geom)
 WHERE b.area_id IS NULL
 AND l.area > 5000
+-- For some reason holes of residential multipolygons, which are of a different
+-- landuse type, are also imported by osm2pgsql
+AND l.landuse IN ('residential', 'farmyard')
 ;
 CREATE INDEX ON landuse_without_buildings USING GIST(geom);
 
-ALTER TABLE landuse ADD COLUMN area float;
-UPDATE landuse SET area = ST_Area(ST_Transform(geom, 4326)::geography, true) ;
-CREATE INDEX ON landuse(area);
-
+\echo >>> Create administrative boundaries dataset
 DROP TABLE IF EXISTS county_or_district;
 CREATE TABLE county_or_district AS
 SELECT county.*, state.name AS state
@@ -34,6 +41,7 @@ WHERE
 ;
 CREATE INDEX ON county_or_district USING GIST(geom);
 
+\echo >>> Extend landuse areas with administrative area name
 DROP TABLE IF EXISTS landuse_export;
 CREATE TABLE landuse_export AS
 SELECT DISTINCT ON (landuse.area_id)
