@@ -20,6 +20,7 @@ if [ data/$REGION-latest.o5m -nt data/$REGION-filtered.o5m ]; then
         --keep="razed:building$BUILDING_VALUES" \
         --keep="amenity=hospital =nursing_home =prison =school" \
         --keep="(amenity=social_facility and social_facility=nursing_home)" \
+        --keep="man_made=bunker_silo =storage_tank =wastewater_plant" \
         --keep="landuse=residential =farmyard" \
         --keep="type=boundary boundary=administrative" \
         -o=data/$REGION-filtered.o5m
