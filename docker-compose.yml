@@ -1,11 +1,11 @@
 version: "3.8"
 services:
-  unmapped_census:
+  landuse:
     build: .
     volumes:
       - .:/app
     entrypoint: ./run.sh
-  census_postgres:
+  postgres:
     image: "postgis/postgis:13-3.0"
     ports:
       - "5432:5432"
