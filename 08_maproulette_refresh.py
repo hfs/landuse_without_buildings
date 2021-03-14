@@ -28,7 +28,9 @@ project_challenges = project_api.get_project_challenges(PROJECT_ID, limit=100)['
 for challenge in project_challenges:
     if challenge['enabled'] and challenge['status'] == 3:
         logging.info("Rebuilding challenge %d", challenge['id'])
-        # This also rebuilds the tasks
+        result = challenge_api.rebuild_challenge(challenge['id'], remove_unmatched=True)
+        logging.info("Rebuilt challenge: %s", result)
+        time.sleep(30)
         result = challenge_api.update_challenge(challenge['id'], {'dataOriginDate': osmdump_mtime.isoformat()})
-        logging.info("Result: %s", result)
-        time.sleep(10) # Give it a bit time to rebuild the tasks
+        logging.info("Updated challenge: %s", result)
+        time.sleep(30) # Give it a bit time to rebuild the tasks
