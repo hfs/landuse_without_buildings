@@ -15,6 +15,12 @@ micro-tasking platform for OpenStreetMap contributors, where they can improve
 the map by adding the buildings and other details, one small task at a time.
 
 
+## Related projects
+
+* [Maproulette: Unmapped residential areas in Germany](https://github.com/hfs/unmapped-census)
+* [Maproulette: Buildings without landuse](https://github.com/hfs/buildings_without_landuse)
+
+
 ## Processing steps
 
 ### [01_download.sh](01_download.sh) – Download data
