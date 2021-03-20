@@ -1,4 +1,4 @@
-# [Maproulette: Residential land use areas without any buildings](https://maproulette.org/browse/projects/41947)
+# [MapRoulette: Residential land use areas without any buildings](https://maproulette.org/browse/projects/41947)
 
 OpenStreetMap maps land use, the primary use of a land area by humans.
 Typical uses are residential, commercial, industrial, and so on. See the
@@ -10,15 +10,15 @@ residential area should have houses.
 
 This project looks at residential and farm yard areas in Germany in
 OpenStreetMap which don’t contain any buildings. These are fed as mapping tasks
-into [Maproulette](https://maproulette.org/browse/projects/41947), a
+into [MapRoulette](https://maproulette.org/browse/projects/41947), a
 micro-tasking platform for OpenStreetMap contributors, where they can improve
 the map by adding the buildings and other details, one small task at a time.
 
 
 ## Related projects
 
-* [Maproulette: Unmapped residential areas in Germany](https://github.com/hfs/unmapped-census)
-* [Maproulette: Buildings without landuse](https://github.com/hfs/buildings_without_landuse)
+* [MapRoulette: Unmapped residential areas in Germany](https://github.com/hfs/unmapped-census)
+* [MapRoulette: Buildings without landuse](https://github.com/hfs/buildings_without_landuse)
 
 
 ## Processing steps
@@ -59,33 +59,33 @@ that are exported to become challenge tasks.
 
 ### [05_export_csv.sh](05_export_csv.sh) – CSV export
 
-This is an export for people who don’t want to use Maproulette, but check one
+This is an export for people who don’t want to use MapRoulette, but check one
 county or state systematically.
 
 ### [06_export_geojson.sh](06_export_geojson.sh) – GeoJSON export
 
 Export the land use polygon as geometry in GeoJSON format that can be uploaded
-in Maproulette. Exporting all roughly 25,000 tasks as single file would lead to
+in MapRoulette. Exporting all roughly 25,000 tasks as single file would lead to
 one massive, daunting challenge. Instead, they are broken up by state or even
 by county, so that each region gets from a few hundred to a few thousand tasks.
 
-Each one of the polygons is presented as mapping task to the Maproulette
+Each one of the polygons is presented as mapping task to the MapRoulette
 contributors. They will use satellite/aerial imagery to see the buildings and
 then draw their outlines.
 
-![Maproulette screenshot](doc/maproulette.jpg)
+![MapRoulette screenshot](doc/maproulette.jpg)
 
 ### [07_upload_results.sh](07_upload_results.sh) – Upload output
 
 This is a convenience script for myself to upload updated versions of the
-output files as GitHub gist, from where they will be pulled by Maproulette. The
+output files as GitHub gist, from where they will be pulled by MapRoulette. The
 data should be refreshed every few weeks, to account for changes done by other
-mappers outside of Maproulette. If the data gets stale, it becomes frustrating
-for Maproulette users to get assigned tasks where nothing is left to do.
+mappers outside of MapRoulette. If the data gets stale, it becomes frustrating
+for MapRoulette users to get assigned tasks where nothing is left to do.
 
-### [08_maproulette_refresh.py](08_maproulette_refresh.py) – Update Maproulette challenges
+### [08_maproulette_refresh.py](08_maproulette_refresh.py) – Update MapRoulette challenges
 
-Each region gets one challenge in Maproulette. Refresh all challenges after the
+Each region gets one challenge in MapRoulette. Refresh all challenges after the
 data has been updated.
 
 
