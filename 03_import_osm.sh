@@ -1,7 +1,6 @@
 #!/bin/bash -e
 source env.sh
 
-REGION=germany
 BUILDING_VALUES="=yes =house =residential =apartments =detached =terrace =semidetached_house =static_caravan =bungalow =semi =dormitory =stilt_house =terraced_house =dwelling_house =chalet =summer_cottage =flats =semi-detached =row_house =summer_house =semi_detached =townhouse =houses =hospital =construction =farm =barn =conservatory =cowshed =farm_auxiliary =greenhouse =slurry_tank =stable =sty"
 
 if [ data/$REGION-latest.osm.pbf -nt data/$REGION-latest.o5m ]; then
@@ -23,6 +22,7 @@ if [ data/$REGION-latest.o5m -nt data/$REGION-filtered.o5m ]; then
         --keep="man_made=bunker_silo =storage_tank =wastewater_plant" \
         --keep="landuse=residential =farmyard" \
         --keep="type=boundary boundary=administrative" \
+        --keep="highway" \
         -o=data/$REGION-filtered.o5m
 fi
 echo ">>> Import filtered OSM data into PostGIS database"

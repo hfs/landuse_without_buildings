@@ -4,18 +4,23 @@ local tables = {}
 
 tables.landuse = osm2pgsql.define_area_table('landuse', {
     { column = 'landuse', type = 'text' },
-    { column = 'geom', type = 'geometry' },
+    { column = 'geom', type = 'geometry', projection=3035 },
 })
 
 tables.building = osm2pgsql.define_area_table('building', {
     { column = 'building', type = 'text' },
-    { column = 'geom', type = 'geometry' },
+    { column = 'geom', type = 'geometry', projection=3035 },
 })
 
 tables.administrative = osm2pgsql.define_area_table('administrative', {
     { column = 'name', type = 'text' },
     { column = 'admin_level', type = 'text' },
-    { column = 'geom', type = 'geometry' },
+    { column = 'geom', type = 'geometry', projection=3035 },
+})
+
+tables.highway = osm2pgsql.define_way_table('highway', {
+    { column = 'highway', type = 'text' },
+    { column = 'geom', type = 'linestring', projection=3035 },
 })
 
 function osm2pgsql.process_way(object)
@@ -29,6 +34,9 @@ function osm2pgsql.process_way(object)
     if building_value then
         row = { geom = { create = 'area' }, building = building_value }
         tables.building:add_row(row)
+    end
+    if object.tags.highway then
+        tables.highway:add_row{ highway = object.tags.highway }
     end
 end
 
