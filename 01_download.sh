@@ -1,6 +1,8 @@
 #!/bin/bash -e
 
+source env.sh
+
 cd data
 echo ">>> Downloading OpenStreetMap dump for Germany"
-wget 'http://download.geofabrik.de/europe/germany-latest.osm.pbf' \
+wget "https://download.geofabrik.de/europe/$REGION-latest.osm.pbf" \
     --timestamping
