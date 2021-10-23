@@ -107,7 +107,7 @@ FROM
                 -- Shared boundary line
                 ST_Relate(a.geom, b.geom, 'FF2F1*212') AND
                 -- Requires PostGIS >= 3.1
-                AND (ST_MaximumInscribedCircle(b.geom)).radius >= 20) b
+                (ST_MaximumInscribedCircle(b.geom)).radius >= 20) b
         WHERE
             (ST_MaximumInscribedCircle(a.geom)).radius < 20
      ) all_neighbors
