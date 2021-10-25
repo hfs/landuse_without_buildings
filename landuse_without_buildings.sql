@@ -9,9 +9,17 @@ UPDATE landuse SET area = ST_Area(geom);
 -- This takes way too long when using geography, so instead use LAEA
 -- pseudo-meters. Should be good enough when only looking at the ratio of
 -- pseudo-squaremeters to pseudo-squaremeters on a local scale.
-ALTER TABLE building DROP COLUMN IF EXISTS area;
-ALTER TABLE building ADD COLUMN area float;
-UPDATE building SET area = ST_Area(geom);
+-- UPDATE and adding a column will rewrite the table anyway. It's faster to
+-- create a new table.
+BEGIN;
+    ALTER TABLE building DROP COLUMN IF EXISTS area;
+    CREATE TABLE building_area AS
+        SELECT *, ST_Area(geom) AS area FROM building;
+    ALTER TABLE building_area ADD PRIMARY KEY (area_id);
+    CREATE INDEX ON building_area USING GIST(geom);
+    DROP TABLE building;
+    ALTER TABLE building_area RENAME TO building;
+COMMIT;
 
 \echo >>> Filter landuse with "too few" buildings
 
