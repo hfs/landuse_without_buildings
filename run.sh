@@ -1,4 +1,5 @@
 #!/bin/bash -e
+set -o pipefail
 
 basedir=$(dirname "$BASH_SOURCE[0]")
 cd "$basedir"

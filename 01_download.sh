@@ -1,5 +1,5 @@
 #!/bin/bash -e
-
+set -o pipefail
 source env.sh
 
 cd data

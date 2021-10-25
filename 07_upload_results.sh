@@ -1,4 +1,5 @@
 #!/bin/bash -e
+set -o pipefail
 
 DATE=$(date -d @$(stat --format %Y data/germany-latest.osm.pbf) +%Y-%m-%d)
 
