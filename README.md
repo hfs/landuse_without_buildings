@@ -1,4 +1,4 @@
-# [MapRoulette: Residential land use areas without any buildings](https://maproulette.org/browse/projects/41947)
+# [MapRoulette: Residential land use areas with too few buildings](https://maproulette.org/browse/challenges/23319)
 
 OpenStreetMap maps land use, the primary use of a land area by humans.
 Typical uses are residential, commercial, industrial, and so on. See the
@@ -9,14 +9,19 @@ Some land-use types imply that buildings should be found on that land. A
 residential area should have houses.
 
 This project looks at residential and farm yard areas in Germany in
-OpenStreetMap which don’t contain any buildings. These are fed as mapping tasks
-into [MapRoulette](https://maproulette.org/browse/projects/41947), a
+OpenStreetMap which contain suspiciously few buildings. These are fed as
+mapping tasks into
+[MapRoulette](https://maproulette.org/browse/projects/41947), a
 micro-tasking platform for OpenStreetMap contributors, where they can improve
 the map by adding the buildings and other details, one small task at a time.
 
 
 ## Related projects
 
+* In the
+  [first version](https://github.com/hfs/landuse_without_buildings/releases/tag/1.0.0)
+  of this project, residential land use areas without *any* buildings were
+  mapped and over 350,000 buildings were added this way by 175 contributors.
 * [MapRoulette: Unmapped residential areas in Germany](https://github.com/hfs/unmapped-census)
 * [MapRoulette: Buildings without landuse](https://github.com/hfs/buildings_without_landuse)
 
@@ -33,29 +38,45 @@ as input data.
 
 Create the PostGIS database where the data analysis will happen.
 
-### [03_import_osm.sh](03_import_osm.sh) – Import OSM data
+### [03_import_osm.sh](03_import_osm.sh) – Import OSM data into the database
 
-Filter the OpenStreetMap data for residential and other relevant land uses and
-buildings. OpenStreetMap contains all kinds of geospatial data, e.g. roads,
-shops and schools. We are only interested in areas where people live like
-residential areas or buildings. The filter is defined in
+Filter the OpenStreetMap data for residential and other relevant land uses,
+buildings and streets. OpenStreetMap contains all kinds of geospatial data,
+e.g. roads, shops and schools. We are only interested in areas where people
+live like residential areas or buildings. The filter is defined in
 [residential_and_buildings.lua](residential_and_buildings.lua).
 
 ### [04_analyze.sh](04_analyze.sh) – Intersect the data sets
 
-Now filter any land use areas which don't contain or touch any buildings of any
-type. These areas should be looked at for sure. There are more residential
-areas, where only _some_ of the buildings are mapped. These are harder to
-detect. The “empty” land use areas yield already enough tasks to do, so we’ll
-use those first.
+Calculate the area in m² of land use areas and of buildings. Intersect the
+geometries to find which buildings are inside which land use area. Calculate
+the sum of areas of all buildings in one land use area, to get the proportion
+how much of a land use area is covered by buildings.
 
-The data looks like this:
+The assumption is that at least X % of residential land use areas is covered by
+buildings.
 
-![Map of land use ares and buildings](doc/landuse_buildings.png)
+The input data looks like this:
 
-The green and purple areas are land use areas. Light red are buildings. Purple
-areas are land use areas which don't contain any buildings and are the ones
-that are exported to become challenge tasks.
+![Map of land use areas and buildings](doc/landuse_buildings.jpg)
+
+The orange and purple areas are residential or farmyard land use areas. Light
+red are buildings. Orange areas are land use areas which are covered less than
+5 % by buildings. They are processed further to eventually become challenge
+tasks. Purple areas contain more than 5 % buildings and are not further
+analyzed in this challenge.
+
+![Map of land use areas split by streets](doc/landuse_split.jpg)
+
+Many land use areas are very large and can contain tens or hundreds of
+buildings. It’s very daunting for mappers having to map so many buildings just
+for one task. That’s why the land use areas are cut up by the roads crossing
+them.
+
+For each block, the coverage by buildings is calculated again. In the map
+image, red blocks contain zero buildings, orange blocks less than 5 % and
+yellow ones 5 % or more. Only the blocks with up to 5 % building coverage
+become tasks and those with more are discarded.
 
 ### [05_export_csv.sh](05_export_csv.sh) – CSV export
 
@@ -65,9 +86,7 @@ county or state systematically.
 ### [06_export_geojson.sh](06_export_geojson.sh) – GeoJSON export
 
 Export the land use polygon as geometry in GeoJSON format that can be uploaded
-in MapRoulette. Exporting all roughly 25,000 tasks as single file would lead to
-one massive, daunting challenge. Instead, they are broken up by state or even
-by county, so that each region gets from a few hundred to a few thousand tasks.
+in MapRoulette.
 
 Each one of the polygons is presented as mapping task to the MapRoulette
 contributors. They will use satellite/aerial imagery to see the buildings and
@@ -85,8 +104,11 @@ for MapRoulette users to get assigned tasks where nothing is left to do.
 
 ### [08_maproulette_refresh.py](08_maproulette_refresh.py) – Update MapRoulette challenges
 
-Each region gets one challenge in MapRoulette. Refresh all challenges after the
-data has been updated.
+Convenience script to refresh the MapRoulette challenge from the uploaded data.
+
+### [09_challenge_status.py](09_challenge_status.py) – Export challenge status as CSV
+
+Export data about completed tasks as CSV for further evaluation of the challenge progress.
 
 
 ## How to run the analysis yourself
@@ -94,8 +116,9 @@ data has been updated.
 You can run the analysis yourself, e.g. for newer data for a different country
 or if you want to modify the criteria.
 
-The processing for Germany requires about 100 GB of temporary disk space and 1
-hour of computation time.
+The processing for Germany requires about 100 GB of temporary disk space and 2
+hours of computation time. Having the database on an SSD is highly recommended,
+as the processing takes several times that on a HDD.
 
 ### Using Docker and Docker Compose
 
@@ -131,3 +154,5 @@ As the output data is a Derivative Work of OpenStreetMap data, is has to be
 licensed under [ODbL](https://opendatacommons.org/licenses/odbl/). Please refer
 to the [OSM Copyright](https://www.openstreetmap.org/copyright/) page and the
 information linked there.
+
+The map images in the documentation are `Ⓒ OpenStreetMap contributors`.
