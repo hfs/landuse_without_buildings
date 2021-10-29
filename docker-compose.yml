@@ -6,9 +6,10 @@ services:
       - .:/app
     entrypoint: ./run.sh
   postgres:
-    image: "postgis/postgis:13-3.0"
+    image: "postgis/postgis:13-3.1"
     ports:
       - "5432:5432"
+    command: postgres -c shared_buffers=2GB -c work_mem=64MB
     environment:
       POSTGRES_PASSWORD: "postgres"
     volumes:

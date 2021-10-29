@@ -1,4 +1,5 @@
 #!/bin/bash -e
+set -o pipefail
 source env.sh
 
 # First PostgreSQL startup takes a bit longer

@@ -4,31 +4,60 @@ local tables = {}
 
 tables.landuse = osm2pgsql.define_area_table('landuse', {
     { column = 'landuse', type = 'text' },
-    { column = 'geom', type = 'geometry' },
+    { column = 'geom', type = 'geometry', projection=3035 },
 })
 
 tables.building = osm2pgsql.define_area_table('building', {
     { column = 'building', type = 'text' },
-    { column = 'geom', type = 'geometry' },
+    { column = 'geom', type = 'geometry', projection=3035 },
 })
 
 tables.administrative = osm2pgsql.define_area_table('administrative', {
     { column = 'name', type = 'text' },
     { column = 'admin_level', type = 'text' },
-    { column = 'geom', type = 'geometry' },
+    { column = 'geom', type = 'geometry', projection=3035 },
 })
+
+tables.highway = osm2pgsql.define_way_table('highway', {
+    { column = 'highway', type = 'text' },
+    { column = 'geom', type = 'linestring', projection=3035 },
+})
+
+function building_type(object)
+    building_value = object.tags.building or object.tags['building:part'] or
+        object.tags['abandoned:building'] or object.tags['demolished:building'] or
+        object.tags['removed:building'] or object.tags['razed:building']
+    if object.tags.amenity then
+        amenity = object.tags.amenity
+        if amenity == 'hospital' or amenity == 'nursing_home' or
+                amenity == 'prison' or amenity == 'school' or
+                amenity == 'social_facility' then
+            building_value = amenity
+        end
+    end
+    if object.tags.man_made then
+        man_made = object.tags.man_made
+        if man_made == 'bunker_silo' or man_made == 'storage_tank' or
+                man_made == 'wastewater_plant' then
+            building_value = man_made
+        end
+    end
+    return building_value
+end
+
 
 function osm2pgsql.process_way(object)
     if object.tags.landuse then
         row = { geom = { create = 'area' }, landuse = object.tags.landuse }
         tables.landuse:add_row(row)
     end
-    building_value = object.tags.building or object.tags['building:part'] or
-        object.tags['abandoned:building'] or object.tags['demolished:building'] or
-        object.tags['removed:building'] or object.tags['razed:building']
+    building_value = building_type(object)
     if building_value then
         row = { geom = { create = 'area' }, building = building_value }
         tables.building:add_row(row)
+    end
+    if object.tags.highway then
+        tables.highway:add_row{ highway = object.tags.highway }
     end
 end
 
@@ -37,9 +66,7 @@ function osm2pgsql.process_relation(object)
         row = { geom = { create = 'area' }, landuse = object.tags.landuse }
         tables.landuse:add_row(row)
     end
-    building_value = object.tags.building or object.tags['building:part'] or
-        object.tags['abandoned:building'] or object.tags['demolished:building'] or
-        object.tags['removed:building'] or object.tags['razed:building']
+    building_value = building_type(object)
     if object.tags.type == 'multipolygon' and building_value then
         row = { geom = { create = 'area' }, building = building_value }
         tables.building:add_row(row)

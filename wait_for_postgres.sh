@@ -1,11 +1,11 @@
 #!/bin/bash -e
-
+set -o pipefail
 source env.sh
 
 echo -n ">>> Waiting for PostgreSQL to become available"
 for try in {0..180}; do
-    if psql -d postgres -c "SELECT 1" &> /dev/null; then
-        echo " ok"
+    if pg_isready -q -d postgres; then
+        echo " -> ok"
         exit 0
     fi
     echo -n .
