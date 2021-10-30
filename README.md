@@ -115,9 +115,9 @@ Export data about completed tasks as CSV for further evaluation of the challenge
 You can run the analysis yourself, e.g. for newer data for a different country
 or if you want to modify the criteria.
 
-The processing for Germany requires about 100 GB of temporary disk space and 2
-hours of computation time. Having the database on an SSD is highly recommended,
-as the processing takes several times that on a HDD.
+The processing for Germany requires about 100 GB of temporary disk space and
+2.5 hours of computation time. Having the database on an SSD is highly
+recommended, as the processing is several times slower on a HDD.
 
 ### Using Docker and Docker Compose
 
