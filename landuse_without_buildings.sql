@@ -45,7 +45,7 @@ CREATE TABLE landuse_with_few_buildings AS
             SELECT * FROM building b WHERE ST_Intersects(l.geom, b.geom)
         ) b
     WHERE
-        l.landuse IN ('residential', 'farmyard') AND
+        l.landuse = 'residential' AND
         l.area > 25000 AND
         ST_Within(l.geom, g.geom)
     GROUP BY l.area_id, l.landuse, l.area, l.geom
@@ -206,7 +206,7 @@ SELECT
 FROM landuse_split
 ;
 
-\echo >>> Median sizee of landuse areas with building fraction = 0:
+\echo >>> Median size of landuse areas with building fraction = 0:
 
 SELECT percentile_cont(0.5) WITHIN GROUP(ORDER BY area) AS median
 FROM landuse_split

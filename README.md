@@ -1,4 +1,4 @@
-# [MapRoulette: Residential land use areas with too few buildings](https://maproulette.org/browse/challenges/23319)
+# [MapRoulette: Residential land use areas with too few buildings](https://maproulette.org/browse/projects/41947)
 
 OpenStreetMap maps land use, the primary use of a land area by humans.
 Typical uses are residential, commercial, industrial, and so on. See the
@@ -8,9 +8,8 @@ for details.
 Some land-use types imply that buildings should be found on that land. A
 residential area should have houses.
 
-This project looks at residential and farm yard areas in Germany in
-OpenStreetMap which contain suspiciously few buildings. These are fed as
-mapping tasks into
+This project looks at residential areas in Germany in OpenStreetMap which
+contain suspiciously few buildings. These are fed as mapping tasks into
 [MapRoulette](https://maproulette.org/browse/projects/41947), a
 micro-tasking platform for OpenStreetMap contributors, where they can improve
 the map by adding the buildings and other details, one small task at a time.
@@ -60,11 +59,11 @@ The input data looks like this:
 
 ![Map of land use areas and buildings](doc/landuse_buildings.jpg)
 
-The orange and purple areas are residential or farmyard land use areas. Light
-red are buildings. Orange areas are land use areas which are covered less than
-5 % by buildings. They are processed further to eventually become challenge
-tasks. Purple areas contain more than 5 % buildings and are not further
-analyzed in this challenge.
+The orange and purple areas are residential land use areas. Light red are
+buildings. Orange areas are land use areas which are covered less than 5 % by
+buildings. They are processed further to eventually become challenge tasks.
+Purple areas contain more than 5 % buildings and are not further analyzed in
+this challenge.
 
 ![Map of land use areas split by streets](doc/landuse_split.jpg)
 
@@ -133,8 +132,8 @@ The output files are `data/*.geojson`.
 
 ### Running manually
 
-Install PostgreSQL, PostGIS, `osm2pgsql`, `osmconvert` and `osmfilter` (package
-`osmctools`) and `npm`.
+Install PostgreSQL, PostGIS ≥ 3.1, `osm2pgsql`, `osmconvert` and `osmfilter`
+(package `osmctools`) and `npm`.
 
 Install [geojson-rewind](https://github.com/mapbox/geojson-rewind)
 using `npm install -g @mapbox/geojson-rewind`.
