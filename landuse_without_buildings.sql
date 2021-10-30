@@ -235,3 +235,11 @@ FROM landuse_split
 WHERE building_fraction = 0
 ;
 
+\echo >>> Landuse areas per state
+
+SELECT state, COUNT(*)
+FROM landuse_split l
+WHERE l.building_fraction <= 0.05
+GROUP BY state
+ORDER BY count
+;
