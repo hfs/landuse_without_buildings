@@ -194,6 +194,28 @@ WHERE l.id = f.id
 ;
 UPDATE landuse_split SET building_fraction = 0 WHERE building_fraction IS NULL;
 
+\echo >>> Intersect with the German states to split the output files
+
+ALTER TABLE landuse_split ADD COLUMN state TEXT;
+UPDATE landuse_split l
+    SET state = state.name
+    FROM (
+        SELECT DISTINCT ON (l2.id)
+            l2.id,
+            a.name
+        FROM
+            landuse_split l2,
+            administrative a
+        WHERE
+            a.admin_level = '4' AND
+            ST_Intersects(l2.geom, a.geom)
+        ORDER BY
+            l2.id
+    ) state
+    WHERE
+        l.id = state.id
+;
+
 \echo >>> Number of landuse areas by building fraction:
 
 SELECT
