@@ -246,10 +246,9 @@ FROM (
         l2.id,
         SUM(b.area) / l2.area AS building_fraction
     FROM
-        landuse_split l2
-        CROSS JOIN LATERAL (
-            SELECT * FROM building b WHERE ST_Intersects(l2.geom, b.geom)
-        ) b
+        landuse_split l2,
+        building b
+    WHERE ST_Intersects(l2.geom, b.geom)
     GROUP BY l2.id
 ) f
 WHERE l.id = f.id
