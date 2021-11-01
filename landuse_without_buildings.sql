@@ -86,19 +86,16 @@ CREATE INDEX ON landuse_split USING GIST(geom);
 
 -- Step 1: For each sliver polygon (defined by ST_MaximumInscribedCircle) find
 -- the non-sliver neighbor with the longest shared border
---
--- This is created as materialized view, because it has to be executed in a loop
--- and is easy to repeat by refreshing.
-DROP MATERIALIZED VIEW IF EXISTS sliver_neighbor;
-CREATE MATERIALIZED VIEW sliver_neighbor AS
+DROP TABLE IF EXISTS sliver_neighbor;
+CREATE TABLE sliver_neighbor AS
 SELECT
     id_small_poly,
-    id_large_poly
+    id_neighbor
 FROM
     (
         SELECT
             a.id AS id_small_poly,
-            b.id AS id_large_poly,
+            b.id AS id_neighbor,
             -- ST_Intersection is guaranteed to be a (multi)linestring because
             -- we check for (only) overlapping borders in ST_Relate
             RANK() OVER (
@@ -113,48 +110,98 @@ FROM
                 -- coming from the same source OSM area
                 a.osm_id = b.osm_id AND
                 -- Shared boundary line
-                ST_Relate(a.geom, b.geom, 'FF2F1*212') AND
-                -- Requires PostGIS >= 3.1
-                (ST_MaximumInscribedCircle(b.geom)).radius >= 20) b
+                ST_Relate(a.geom, b.geom, 'FF2F1*212')
+        ) b
         WHERE
-            (ST_MaximumInscribedCircle(a.geom)).radius < 20
+            -- Requires PostGIS >= 3.1
+            (ST_MaximumInscribedCircle(a.geom)).radius < 50
      ) all_neighbors
 WHERE
     neighbor_rank = 1;
 
--- Need to run the sliver detection and removal recursively, because there are
--- slivers that are only surrounded by slivers and not found in the first
--- iteration
-DO $$
-DECLARE
-    number_of_slivers integer := 0;
-BEGIN
-    number_of_slivers := COUNT(*) FROM sliver_neighbor;
-    WHILE number_of_slivers > 0 LOOP
-        RAISE NOTICE 'Number of slivers: %', number_of_slivers;
+-- Now we want to merge slivers with their "largest" neighbor. We need to
+-- identify the transitive closures first, because there may be chains of
+-- neighbors sliver -> sliver -> regular, or circles sliver <-> sliver.
+DROP TABLE IF EXISTS transitive_group;
+-- Label every polygon with the ID of their transitive group.
+-- Label 0 = Not yet touched in the algorithm
+CREATE TABLE transitive_group (
+    id INTEGER PRIMARY KEY,
+    label INTEGER NOT NULL DEFAULT 0
+);
+DO $funcBody$
+    DECLARE
+        label1 integer;
+        label2 integer;
+        nextlabel integer;
+        pair sliver_neighbor%rowtype;
+    BEGIN
+        DELETE FROM transitive_group;
+        INSERT INTO transitive_group(id)
+            SELECT DISTINCT unnest(array[id_small_poly, id_neighbor])
+            FROM sliver_neighbor ORDER BY 1;
+        nextlabel := 0;
+        FOR pair IN SELECT * FROM sliver_neighbor
+        LOOP
+            SELECT label INTO label1 FROM transitive_group WHERE id = pair.id_small_poly;
+            SELECT label INTO label2 FROM transitive_group WHERE id = pair.id_neighbor;
+            IF label1 = 0 AND label2 = 0 THEN
+                -- Both not yet seen: Start a new group
+                nextlabel := nextlabel+1;
+                UPDATE transitive_group SET label = nextlabel WHERE id in (pair.id_small_poly, pair.id_neighbor);
+            ELSIF label1 = 0 AND label2 != 0 THEN
+                -- One of them seen: Assign the same label to the other one
+                UPDATE transitive_group SET label = label2 WHERE ID = pair.id_small_poly;
+            ELSIF label1 != 0 AND label2 = 0 THEN
+                -- One of them seen: Assign the same label to the other one
+                UPDATE transitive_group SET label = label1 WHERE ID = pair.id_neighbor;
+            ELSIF label1 != label2 THEN
+                -- Found the connection between two groups: Merge them
+                UPDATE transitive_group SET label = label1 WHERE label = label2;
+            END IF;
+        END LOOP;
+    END;
+$funcBody$ LANGUAGE plpgsql;
 
-        -- Step 2: Merge "large" polygons with neighbor slivers
-        UPDATE landuse_split l
-        SET geom = merged.geom
-        FROM (
-            SELECT l2.id, ST_Union(l2.geom, ST_Union(s.geom)) AS geom
-            FROM landuse_split l2, landuse_split s, sliver_neighbor n
-            WHERE l2.id = n.id_large_poly AND s.id = n.id_small_poly
-            GROUP BY l2.id, l2.geom
-        ) merged
-        WHERE l.id = merged.id
-        ;
+CREATE INDEX ON transitive_group(label);
 
-        -- Step 3: Remove slivers
-        DELETE FROM landuse_split l
-        USING sliver_neighbor n
-        WHERE l.id = n.id_small_poly
-        ;
+DROP TABLE IF EXISTS max_per_group;
+CREATE TABLE max_per_group AS
+SELECT max(id) AS max_id, label
+FROM transitive_group t
+GROUP BY LABEL
+;
+ALTER TABLE max_per_group ADD PRIMARY KEY (label);
 
-        REFRESH MATERIALIZED VIEW sliver_neighbor;
-        number_of_slivers := COUNT(*) FROM sliver_neighbor;
-    END LOOP;
-END$$;
+-- Now merge all polygons that are in the same group. Use the polygon with the
+-- largest ID (it's not important which one out of the group) and overwrite its
+-- geometry with the union of the group. Delete all other polygons in the group.
+UPDATE landuse_split l
+SET geom = merged.geom
+FROM
+    max_per_group m
+    CROSS JOIN LATERAL
+    (
+        SELECT m.max_id AS id, ST_Union(s.geom) AS geom
+        FROM landuse_split s, transitive_group t
+        WHERE
+            m.LABEL = t.LABEL AND
+            t.id = s.id
+        GROUP BY m.max_id
+    ) merged
+WHERE
+    l.id = m.max_id
+;
+
+DELETE FROM landuse_split l
+USING
+    max_per_group m,
+    transitive_group t
+WHERE
+    l.id = t.id AND
+    t.label = m.label AND
+    l.id != m.max_id
+;
 
 \echo >>> Regenerate IDs after removals
 
