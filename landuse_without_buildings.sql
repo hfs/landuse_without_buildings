@@ -72,6 +72,20 @@ WITH split AS (
         SELECT * FROM highway h WHERE ST_Intersects(l.geom, h.geom)
       ) h
     GROUP BY l.area_id, l.geom
+    UNION ALL
+    SELECT
+        l.area_id,
+        CASE
+            WHEN l.area_id >= 0 THEN 'https://osm.org/way/' || l.area_id
+            ELSE 'https://osm.org/relation/' || -l.area_id
+        END AS osm_id,
+        l.geom,
+        ST_Centroid(l.geom) AS centroid
+    FROM
+        landuse_with_few_buildings l
+        LEFT JOIN highway h ON ST_Intersects(l.geom, h.geom)
+    WHERE
+        h.geom IS NULL
 )
 SELECT
     ROW_NUMBER() OVER (ORDER BY s.area_id, ST_Azimuth(s.centroid, ST_Centroid(s.geom))) - 1 AS id,
@@ -81,6 +95,7 @@ FROM split s
 ;
 CREATE INDEX ON landuse_split(osm_id);
 CREATE INDEX ON landuse_split USING GIST(geom);
+VACUUM ANALYZE landuse_split;
 
 \echo >>> Join sliver polygons (very narrow polygons with small area) with their neighbor
 
