@@ -20,7 +20,9 @@ the map by adding the buildings and other details, one small task at a time.
 * In the
   [first version](https://github.com/hfs/landuse_without_buildings/releases/tag/1.0.0)
   of this project, residential land use areas without *any* buildings were
-  mapped and over 350,000 buildings were added this way by 175 contributors.
+  mapped and over 360,000 buildings were added this way by 175 contributors. See the blog post
+  [Mapping 360,000 buildings in Germany](https://www.openstreetmap.org/user/hfs/diary/398014)
+  about the results.
 * [MapRoulette: Unmapped residential areas in Germany](https://github.com/hfs/unmapped-census)
 * [MapRoulette: Buildings without landuse](https://github.com/hfs/buildings_without_landuse)
 
