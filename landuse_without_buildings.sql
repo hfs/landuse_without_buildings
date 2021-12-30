@@ -1,10 +1,8 @@
-\echo >>> Calculate area of landuse
+\echo >>> Keep only residential landuse
 
-ALTER TABLE landuse DROP COLUMN IF EXISTS area;
-ALTER TABLE landuse ADD COLUMN area float;
-UPDATE landuse SET area = ST_Area(geom);
+DELETE FROM landuse WHERE landuse != 'residential';
 
-\echo >>> Calculate area of buildings
+\echo >>> Reproject landuse and calculate area
 
 -- This takes way too long when using geography, so instead use LAEA
 -- pseudo-meters. Should be good enough when only looking at the ratio of
@@ -12,46 +10,59 @@ UPDATE landuse SET area = ST_Area(geom);
 -- UPDATE and adding a column will rewrite the table anyway. It's faster to
 -- create a new table.
 BEGIN;
-    ALTER TABLE building DROP COLUMN IF EXISTS area;
+    CREATE TABLE landuse_area AS
+        SELECT area_id, landuse, ST_Area(ST_Transform(geom, 3035)) AS area,
+        ST_Transform(geom, 3035) AS geom FROM landuse;
+    ALTER TABLE landuse_area ADD PRIMARY KEY (area_id);
+    CREATE INDEX ON landuse_area USING GIST(geom);
+    DROP TABLE landuse;
+    ALTER TABLE landuse_area RENAME TO landuse;
+COMMIT;
+
+\echo >>> Reproject buildings and calculate area
+
+BEGIN;
     CREATE TABLE building_area AS
-        SELECT *, ST_Area(geom) AS area FROM building;
+        SELECT area_id, building, ST_Area(ST_Transform(geom, 3035)) AS area,
+        ST_Transform(geom, 3035) AS geom FROM building;
     ALTER TABLE building_area ADD PRIMARY KEY (area_id);
     CREATE INDEX ON building_area USING GIST(geom);
     DROP TABLE building;
     ALTER TABLE building_area RENAME TO building;
 COMMIT;
 
-\echo >>> Filter landuse with "too few" buildings
+\echo >>> Reproject highways
 
-DROP TABLE IF EXISTS landuse_with_few_buildings;
-CREATE TABLE landuse_with_few_buildings AS
-    WITH germany AS (
-        SELECT geom
-        FROM administrative
-        WHERE
-            admin_level = '2' AND
-            name = 'Deutschland'
-    )
-    SELECT
-        l.area_id,
-        l.landuse,
-        l.area,
-        SUM(b.area) / l.area AS building_fraction,
-        l.geom
-    FROM
-        germany g,
-        landuse l
-        CROSS JOIN LATERAL (
-            SELECT * FROM building b WHERE ST_Intersects(l.geom, b.geom)
-        ) b
-    WHERE
-        l.landuse = 'residential' AND
-        l.area > 25000 AND
-        ST_Within(l.geom, g.geom)
-    GROUP BY l.area_id, l.landuse, l.area, l.geom
-    HAVING SUM(b.area) / l.area < 0.05
+BEGIN;
+    CREATE TABLE highway_reprojected AS
+      SELECT way_id, highway, ST_Transform(geom, 3035) AS geom FROM highway;
+    ALTER TABLE highway_reprojected ADD PRIMARY KEY (way_id);
+    CREATE INDEX ON highway_reprojected USING GIST(geom);
+    DROP TABLE highway;
+    ALTER TABLE highway_reprojected RENAME TO highway;
+COMMIT;
+
+\echo >>> Filter landuse from previous projects
+
+-- Any polygon that has already been looked at in previous projects should not
+-- be presented to MapRoulette users again.
+
+DROP TABLE IF EXISTS blacklist;
+CREATE TABLE blacklist (id text);
+\COPY blacklist FROM 'landuse_blacklist.csv' (FORMAT CSV, HEADER)
+ALTER TABLE blacklist ADD COLUMN area_id bigint;
+UPDATE blacklist SET area_id =
+  CASE
+    WHEN id LIKE '%/way/%'
+      THEN CAST(regexp_replace(id, '.*/', '') AS bigint)
+    WHEN id LIKE '%/relation/%'
+      THEN - CAST(regexp_replace(id, '.*/', '') AS bigint)
+  END
 ;
-CREATE INDEX ON landuse_with_few_buildings USING GIST(geom);
+DELETE FROM landuse l
+USING blacklist b
+WHERE l.area_id = b.area_id
+;
 
 \echo >>> Split landuse areas by highways
 
@@ -67,7 +78,7 @@ WITH split AS (
       (ST_Dump(ST_Split(l.geom, ST_Collect(h.geom)))).geom,
       ST_Centroid(l.geom) AS centroid
     FROM
-      landuse_with_few_buildings l
+      landuse l
       CROSS JOIN LATERAL (
         SELECT * FROM highway h WHERE ST_Intersects(l.geom, h.geom)
       ) h
@@ -82,7 +93,7 @@ WITH split AS (
         l.geom,
         ST_Centroid(l.geom) AS centroid
     FROM
-        landuse_with_few_buildings l
+        landuse l
         LEFT JOIN highway h ON ST_Intersects(l.geom, h.geom)
     WHERE
         h.geom IS NULL
@@ -234,7 +245,7 @@ ALTER TABLE landuse_split DROP COLUMN id CASCADE;
 ALTER TABLE landuse_split RENAME COLUMN new_id TO id;
 ALTER TABLE landuse_split ADD PRIMARY KEY(id);
 
-\echo >>> Re-intersect with buildings after merging to get the area fraction
+\echo >>> Intersect with buildings to get the area fraction
 
 ALTER TABLE landuse_split ADD COLUMN area float;
 UPDATE landuse_split SET area = ST_Area(geom);

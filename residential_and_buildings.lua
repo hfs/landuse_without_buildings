@@ -1,26 +1,24 @@
-osm2pgsql.srid = 3035
-
 local tables = {}
 
 tables.landuse = osm2pgsql.define_area_table('landuse', {
     { column = 'landuse', type = 'text' },
-    { column = 'geom', type = 'geometry', projection=3035 },
+    { column = 'geom', type = 'geometry' },
 })
 
 tables.building = osm2pgsql.define_area_table('building', {
     { column = 'building', type = 'text' },
-    { column = 'geom', type = 'geometry', projection=3035 },
+    { column = 'geom', type = 'geometry' },
 })
 
 tables.administrative = osm2pgsql.define_area_table('administrative', {
     { column = 'name', type = 'text' },
     { column = 'admin_level', type = 'text' },
-    { column = 'geom', type = 'geometry', projection=3035 },
+    { column = 'geom', type = 'geometry' },
 })
 
 tables.highway = osm2pgsql.define_way_table('highway', {
     { column = 'highway', type = 'text' },
-    { column = 'geom', type = 'linestring', projection=3035 },
+    { column = 'geom', type = 'linestring' },
 })
 
 function building_type(object)

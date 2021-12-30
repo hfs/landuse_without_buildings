@@ -29,5 +29,5 @@ fi
 echo ">>> Import filtered OSM data into PostGIS database"
 osm2pgsql --create --slim --cache $MEMORY --number-processes 8 \
     --flat-nodes data/nodes.bin --style residential_and_buildings.lua \
-    --output flex --proj 3035 data/$REGION-filtered.o5m
+    --output flex data/$REGION-filtered.o5m
 rm data/nodes.bin
