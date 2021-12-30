@@ -291,27 +291,39 @@ UPDATE landuse_split l
 \echo >>> Number of landuse areas by building fraction:
 
 SELECT
-    COUNT(*) FILTER (WHERE building_fraction = 0) AS "building_fraction = 0",
+    0 AS "≥ m²",
+    COUNT(*) FILTER (WHERE area < 25000 AND building_fraction = 0) AS "building_fraction = 0",
     COUNT(*) FILTER (
-        WHERE building_fraction > 0 AND
+        WHERE  area < 25000 AND building_fraction > 0 AND
         building_fraction <= 0.05
     ) AS "0 < building_fraction ≤ 5 %",
-    COUNT(*) FILTER (WHERE building_fraction > 0.05) AS "building_fraction > 5 %"
+    COUNT(*) FILTER (WHERE  area < 25000 AND building_fraction > 0.05) AS "building_fraction > 5 %"
 FROM landuse_split
+UNION ALL
+SELECT
+    25000 AS "≥ m²",
+    COUNT(*) FILTER (WHERE area >= 25000 AND building_fraction = 0) AS "building_fraction = 0",
+    COUNT(*) FILTER (
+        WHERE  area >= 25000 AND building_fraction > 0 AND
+        building_fraction <= 0.05
+    ) AS "0 < building_fraction ≤ 5 %",
+    COUNT(*) FILTER (WHERE  area >= 25000 AND building_fraction > 0.05) AS "building_fraction > 5 %"
+FROM landuse_split
+ORDER BY "≥ m²"
 ;
 
 \echo >>> Median size of landuse areas with building fraction = 0:
 
 SELECT percentile_cont(0.5) WITHIN GROUP(ORDER BY area) AS median
 FROM landuse_split
-WHERE building_fraction = 0
+WHERE building_fraction = 0 AND area >= 25000
 ;
 
 \echo >>> Landuse areas per state
 
 SELECT state, COUNT(*)
 FROM landuse_split l
-WHERE l.building_fraction <= 0.05
+WHERE l.building_fraction <= 0.05 AND area >= 25000
 GROUP BY state
 ORDER BY count
 ;
