@@ -177,10 +177,10 @@ DO $funcBody$
                 UPDATE transitive_group SET label = nextlabel WHERE id in (pair.id_small_poly, pair.id_neighbor);
             ELSIF label1 = 0 AND label2 != 0 THEN
                 -- One of them seen: Assign the same label to the other one
-                UPDATE transitive_group SET label = label2 WHERE ID = pair.id_small_poly;
+                UPDATE transitive_group SET label = label2 WHERE id = pair.id_small_poly;
             ELSIF label1 != 0 AND label2 = 0 THEN
                 -- One of them seen: Assign the same label to the other one
-                UPDATE transitive_group SET label = label1 WHERE ID = pair.id_neighbor;
+                UPDATE transitive_group SET label = label1 WHERE id = pair.id_neighbor;
             ELSIF label1 != label2 THEN
                 -- Found the connection between two groups: Merge them
                 UPDATE transitive_group SET label = label1 WHERE label = label2;
@@ -211,7 +211,7 @@ FROM
         SELECT m.max_id AS id, ST_Union(s.geom) AS geom
         FROM landuse_split s, transitive_group t
         WHERE
-            m.LABEL = t.LABEL AND
+            m.label = t.label AND
             t.id = s.id
         GROUP BY m.max_id
     ) merged
