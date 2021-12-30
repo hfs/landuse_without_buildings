@@ -1,4 +1,5 @@
-export REGION=germany
+export REGION=niedersachsen
+export REGION_PATH=europe/germany/$REGION
 
 export PGHOST=postgres
 export PGPORT=5432
