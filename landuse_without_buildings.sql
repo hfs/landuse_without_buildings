@@ -1,5 +1,7 @@
 \echo >>> Keep only residential landuse
 
+-- TODO May need to subtract parks, forests, etc from residential
+
 DELETE FROM landuse WHERE landuse != 'residential';
 
 \echo >>> Reproject landuse and calculate area
@@ -82,6 +84,7 @@ WITH split AS (
       CROSS JOIN LATERAL (
         SELECT * FROM highway h WHERE ST_Intersects(l.geom, h.geom)
       ) h
+    WHERE l.area >= 25000
     GROUP BY l.area_id, l.geom
     UNION ALL
     SELECT
@@ -96,6 +99,7 @@ WITH split AS (
         landuse l
         LEFT JOIN highway h ON ST_Intersects(l.geom, h.geom)
     WHERE
+        l.area >= 25000 AND
         h.geom IS NULL
 )
 SELECT
@@ -104,6 +108,7 @@ SELECT
     s.geom
 FROM split s
 ;
+ALTER TABLE landuse_split ADD PRIMARY KEY (id);
 CREATE INDEX ON landuse_split(osm_id);
 CREATE INDEX ON landuse_split USING GIST(geom);
 VACUUM ANALYZE landuse_split;
@@ -140,7 +145,7 @@ FROM
         ) b
         WHERE
             -- Requires PostGIS >= 3.1
-            (ST_MaximumInscribedCircle(a.geom)).radius < 50
+            (ST_MaximumInscribedCircle(a.geom)).radius < 20
      ) all_neighbors
 WHERE
     neighbor_rank = 1;
@@ -198,6 +203,7 @@ FROM transitive_group t
 GROUP BY LABEL
 ;
 ALTER TABLE max_per_group ADD PRIMARY KEY (label);
+CREATE INDEX ON max_per_group(max_id);
 
 -- Now merge all polygons that are in the same group. Use the polygon with the
 -- largest ID (it's not important which one out of the group) and overwrite its
@@ -229,6 +235,120 @@ WHERE
     l.id != m.max_id
 ;
 
+\echo >>> Calculate area of polygons
+
+ALTER TABLE landuse_split ADD COLUMN area float;
+UPDATE landuse_split SET area = ST_Area(geom);
+
+\echo >>> Cut up too large polygons
+
+-- Add sequence to generate new, unique IDs when inserting split polygons
+CREATE SEQUENCE landuse_split_id_seq
+OWNED BY landuse_split.id
+;
+SELECT setval('landuse_split_id_seq', (SELECT MAX(id) FROM landuse_split));
+
+CREATE OR REPLACE FUNCTION split_polygon_in_half(
+    geom geometry
+)
+RETURNS geometry(Geometrycollection)
+AS $funcBody$
+DECLARE
+    bbox geometry(Linestring);
+    blade geometry(Linestring);
+    blade_elongated geometry(Linestring);
+    elongation_factor double precision := 1.5;
+BEGIN
+    SELECT ST_Boundary(ST_OrientedEnvelope(geom)) INTO bbox;
+    SELECT
+        ST_OffsetCurve(
+            ST_MakeLine( -- short edge
+                ST_PointN(bbox, 1),
+                ST_PointN(bbox, 2)
+            ),
+            ST_Distance(
+                -- long edge
+                ST_PointN(bbox, 2),
+                ST_PointN(bbox, 3)
+            ) / 2
+        )
+        INTO blade;
+    -- Need to extend the cut line in case it ends exactly on the polygon
+    -- boundary. In that case no cut would be performed.
+    SELECT
+        ST_Affine(blade,
+            elongation_factor, 0,
+            0, elongation_factor,
+            (elongation_factor - 1) * -ST_X(ST_LineInterpolatePoint(blade, 0.5)),
+            (elongation_factor - 1) * -ST_Y(ST_LineInterpolatePoint(blade, 0.5))
+        )
+        INTO blade_elongated;
+    RETURN ST_Split(geom, blade_elongated);
+END
+$funcBody$
+LANGUAGE plpgsql
+;
+
+CREATE OR REPLACE FUNCTION split_too_large_polygons()
+RETURNS void
+AS $funcBody$
+BEGIN
+    DROP TABLE IF EXISTS landuse_too_big;
+    CREATE TABLE landuse_too_big AS
+    SELECT
+        osm_id,
+        id AS original_id,
+        -- new_id doesn't have to be unique. It's only used to get a
+        -- reproducable order when regenerating the IDs in the next step.
+        id + (dump).path[1] AS new_id,
+        (dump).geom
+    FROM (
+        SELECT
+            osm_id,
+            id,
+            geom,
+            ST_Dump(split_polygon_in_half(geom)) AS dump
+        FROM landuse_split
+        WHERE area > 100000
+    ) polygon_halves
+    ;
+    DELETE FROM landuse_split s
+    USING landuse_too_big b
+    WHERE
+        s.id = b.original_id
+    ;
+    INSERT INTO landuse_split(osm_id, geom, id, area)
+    SELECT
+        osm_id,
+        geom,
+        nextval('landuse_split_id_seq') AS id,
+        ST_Area(geom) AS area
+    FROM landuse_too_big
+    ORDER BY osm_id, new_id
+    ;
+END;
+$funcBody$
+LANGUAGE plpgsql
+;
+
+-- Split too big polygons recursively, until none remain
+DO $loopBody$
+DECLARE
+    polygon_count integer;
+BEGIN
+    SELECT COUNT(*) INTO polygon_count FROM landuse_split WHERE area >= 100000;
+    WHILE polygon_count > 0
+    LOOP
+        RAISE NOTICE '>>> Polygons to split: %', polygon_count;
+        PERFORM split_too_large_polygons();
+        SELECT COUNT(*) INTO polygon_count FROM landuse_split WHERE area >= 100000;
+    END LOOP;
+END;
+$loopBody$ LANGUAGE plpgsql
+;
+
+SELECT COUNT(*)  FROM landuse_split WHERE area >= 100000;
+
 \echo >>> Regenerate IDs after removals
 
 ALTER TABLE landuse_split ADD COLUMN new_id text;
@@ -247,8 +367,6 @@ ALTER TABLE landuse_split ADD PRIMARY KEY(id);
 
 \echo >>> Intersect with buildings to get the area fraction
 
-ALTER TABLE landuse_split ADD COLUMN area float;
-UPDATE landuse_split SET area = ST_Area(geom);
 ALTER TABLE landuse_split ADD COLUMN building_fraction float;
 UPDATE landuse_split l
 SET building_fraction = f.building_fraction
@@ -266,64 +384,39 @@ WHERE l.id = f.id
 ;
 UPDATE landuse_split SET building_fraction = 0 WHERE building_fraction IS NULL;
 
-\echo >>> Intersect with the German states to split the output files
-
-ALTER TABLE landuse_split ADD COLUMN state TEXT;
-UPDATE landuse_split l
-    SET state = state.name
-    FROM (
-        SELECT DISTINCT ON (l2.id)
-            l2.id,
-            a.name
-        FROM
-            landuse_split l2,
-            administrative a
-        WHERE
-            a.admin_level = '4' AND
-            ST_Intersects(l2.geom, a.geom)
-        ORDER BY
-            l2.id
-    ) state
-    WHERE
-        l.id = state.id
-;
-
-\echo >>> Number of landuse areas by building fraction:
+\echo >>> Number of landuse areas by area and building fraction:
 
 SELECT
-    0 AS "≥ m²",
-    COUNT(*) FILTER (WHERE area < 25000 AND building_fraction = 0) AS "building_fraction = 0",
-    COUNT(*) FILTER (
-        WHERE  area < 25000 AND building_fraction > 0 AND
-        building_fraction <= 0.05
-    ) AS "0 < building_fraction ≤ 5 %",
-    COUNT(*) FILTER (WHERE  area < 25000 AND building_fraction > 0.05) AS "building_fraction > 5 %"
-FROM landuse_split
-UNION ALL
-SELECT
-    25000 AS "≥ m²",
-    COUNT(*) FILTER (WHERE area >= 25000 AND building_fraction = 0) AS "building_fraction = 0",
-    COUNT(*) FILTER (
-        WHERE  area >= 25000 AND building_fraction > 0 AND
-        building_fraction <= 0.05
-    ) AS "0 < building_fraction ≤ 5 %",
-    COUNT(*) FILTER (WHERE  area >= 25000 AND building_fraction > 0.05) AS "building_fraction > 5 %"
-FROM landuse_split
-ORDER BY "≥ m²"
+    CASE
+        WHEN area_rounded >= 100000 THEN '≥ 100,000'
+        ELSE to_char(area_rounded, '999,999')
+    END AS "area [m²]",
+    CASE
+        WHEN building_fraction_rounded >= 0.1 THEN '≥ 10 %'
+        ELSE ROUND(building_fraction_rounded * 100) || ' %'
+    END AS building_fraction,
+    COUNT(*)
+FROM (
+    SELECT
+        CASE
+            WHEN area > 100000 THEN 100000
+            ELSE floor(area / 5000) * 5000
+        END AS area_rounded,
+        CASE
+            WHEN building_fraction > 0.1 THEN 0.1
+            ELSE floor(building_fraction / 0.01) * 0.01
+        END AS building_fraction_rounded
+    FROM
+        landuse_split ls
+) rounded
+GROUP BY area_rounded, building_fraction_rounded
+ORDER BY area_rounded, building_fraction_rounded
+\crosstabview
 ;
 
 \echo >>> Median size of landuse areas with building fraction = 0:
 
 SELECT percentile_cont(0.5) WITHIN GROUP(ORDER BY area) AS median
 FROM landuse_split
-WHERE building_fraction = 0 AND area >= 25000
-;
-
-\echo >>> Landuse areas per state
-
-SELECT state, COUNT(*)
-FROM landuse_split l
-WHERE l.building_fraction <= 0.05 AND area >= 25000
-GROUP BY state
-ORDER BY count
+WHERE building_fraction = 0
 ;
