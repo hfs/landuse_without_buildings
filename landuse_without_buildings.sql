@@ -140,12 +140,12 @@ FROM
             WHERE
                 -- coming from the same source OSM area
                 a.osm_id = b.osm_id AND
-                -- Shared boundary line
+                -- Shared boundary line, but not just a corner
                 ST_Relate(a.geom, b.geom, 'FF2F1*212')
         ) b
         WHERE
             -- Requires PostGIS >= 3.1
-            (ST_MaximumInscribedCircle(a.geom)).radius < 20
+            (ST_MaximumInscribedCircle(a.geom)).radius < 30
      ) all_neighbors
 WHERE
     neighbor_rank = 1;
