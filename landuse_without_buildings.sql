@@ -1,8 +1,46 @@
 \echo >>> Keep only residential landuse
 
--- TODO May need to subtract parks, forests, etc from residential
+-- There are many residential landuse areas that are large and that are
+-- overlapped by parks, forests, etc. We need to subtract them first.
 
-DELETE FROM landuse WHERE landuse != 'residential';
+DROP TABLE IF EXISTS landuse_residential;
+CREATE TABLE landuse_residential AS
+SELECT area_id, landuse, geom FROM landuse
+WHERE landuse IN ('residential', 'farmyard')
+;
+CREATE INDEX ON landuse_residential USING GIST(geom);
+
+DROP TABLE IF EXISTS landuse_unwanted;
+CREATE TABLE landuse_unwanted AS
+SELECT area_id, landuse, geom  FROM landuse
+WHERE landuse NOT IN ('residential', 'farmyard')
+UNION ALL
+SELECT area_id, kind AS unwanted, geom  FROM unwanted
+-- TODO Add highway=footway, highway=pedestrian with area=yes as unwanted
+;
+CREATE INDEX ON landuse_unwanted USING GIST(geom);
+
+DROP TABLE IF EXISTS landuse_trimmed;
+CREATE TABLE landuse_trimmed AS
+SELECT
+    area_id,
+    landuse,
+    COALESCE(
+        ST_Difference(
+            l.geom,
+            unwanted.geom
+        ),
+        l.geom
+    ) geom
+FROM landuse_residential l
+CROSS JOIN LATERAL
+(
+    SELECT ST_Union(u.geom) AS geom
+    FROM landuse_unwanted u
+    WHERE ST_Intersects(l.geom, u.geom) 
+) unwanted
+;
+CREATE INDEX ON landuse_trimmed USING GIST(geom);
 
 \echo >>> Reproject landuse and calculate area
 
@@ -14,11 +52,11 @@ DELETE FROM landuse WHERE landuse != 'residential';
 BEGIN;
     CREATE TABLE landuse_area AS
         SELECT area_id, landuse, ST_Area(ST_Transform(geom, 3035)) AS area,
-        ST_Transform(geom, 3035) AS geom FROM landuse;
+        ST_Transform(geom, 3035) AS geom FROM landuse_trimmed;
     ALTER TABLE landuse_area ADD PRIMARY KEY (area_id);
     CREATE INDEX ON landuse_area USING GIST(geom);
-    DROP TABLE landuse;
-    ALTER TABLE landuse_area RENAME TO landuse;
+    DROP TABLE landuse_trimmed;
+    ALTER TABLE landuse_area RENAME TO landuse_trimmed;
 COMMIT;
 
 \echo >>> Reproject buildings and calculate area
@@ -32,6 +70,18 @@ BEGIN;
     DROP TABLE building;
     ALTER TABLE building_area RENAME TO building;
 COMMIT;
+
+\echo >> Delete highways that should not be used for splitting, especially footways and cycleways
+
+-- Using a positive list, as there are many weird values
+DELETE FROM highway
+WHERE highway NOT IN (
+    'motorway', 'motorway_link', 'trunk', 'trunk_link',
+    'primary', 'primary_link', 'secondary', 'secondary_link',
+    'tertiary', 'tertiary_link', 'unclassified', 'residential', 'service',
+    'track', 'living_street', 'road', 'busway'
+)
+;
 
 \echo >>> Reproject highways
 
@@ -61,7 +111,7 @@ UPDATE blacklist SET area_id =
       THEN - CAST(regexp_replace(id, '.*/', '') AS bigint)
   END
 ;
-DELETE FROM landuse l
+DELETE FROM landuse_trimmed l
 USING blacklist b
 WHERE l.area_id = b.area_id
 ;
@@ -80,7 +130,7 @@ WITH split AS (
       (ST_Dump(ST_Split(l.geom, ST_Collect(h.geom)))).geom,
       ST_Centroid(l.geom) AS centroid
     FROM
-      landuse l
+      landuse_trimmed l
       CROSS JOIN LATERAL (
         SELECT * FROM highway h WHERE ST_Intersects(l.geom, h.geom)
       ) h
@@ -96,7 +146,7 @@ WITH split AS (
         l.geom,
         ST_Centroid(l.geom) AS centroid
     FROM
-        landuse l
+        landuse_trimmed l
         LEFT JOIN highway h ON ST_Intersects(l.geom, h.geom)
     WHERE
         l.area >= 25000 AND
@@ -160,11 +210,14 @@ CREATE TABLE transitive_group (
     id INTEGER PRIMARY KEY,
     label INTEGER NOT NULL DEFAULT 0
 );
+CREATE INDEX ON transitive_group(label);
 DO $funcBody$
     DECLARE
         label1 integer;
         label2 integer;
         nextlabel integer;
+        loop_counter integer;
+        total_count integer;
         pair sliver_neighbor%rowtype;
     BEGIN
         DELETE FROM transitive_group;
@@ -172,8 +225,15 @@ DO $funcBody$
             SELECT DISTINCT unnest(array[id_small_poly, id_neighbor])
             FROM sliver_neighbor ORDER BY 1;
         nextlabel := 0;
+        loop_counter := 0;
+        SELECT COUNT(*) INTO total_count FROM sliver_neighbor;
         FOR pair IN SELECT * FROM sliver_neighbor
         LOOP
+            IF loop_counter % 10000 = 0 THEN
+                RAISE NOTICE '>>>   Sliver neighbors progress: % %%',
+            (loop_counter::double precision / total_count * 100.0)::int;
+            END IF;
+            loop_counter := loop_counter + 1;
             SELECT label INTO label1 FROM transitive_group WHERE id = pair.id_small_poly;
             SELECT label INTO label2 FROM transitive_group WHERE id = pair.id_neighbor;
             IF label1 = 0 AND label2 = 0 THEN
@@ -193,8 +253,6 @@ DO $funcBody$
         END LOOP;
     END;
 $funcBody$ LANGUAGE plpgsql;
-
-CREATE INDEX ON transitive_group(label);
 
 DROP TABLE IF EXISTS max_per_group;
 CREATE TABLE max_per_group AS
@@ -346,8 +404,6 @@ BEGIN
 END;
 $loopBody$ LANGUAGE plpgsql
 ;
-
-SELECT COUNT(*)  FROM landuse_split WHERE area >= 100000;
 
 \echo >>> Regenerate IDs after removals
 

@@ -21,9 +21,12 @@ if [ data/$REGION-latest.o5m -nt data/$REGION-filtered.o5m ]; then
         --keep="amenity=hospital =nursing_home =prison =school" \
         --keep="(amenity=social_facility and social_facility=nursing_home)" \
         --keep="man_made=bunker_silo =storage_tank =wastewater_plant" \
-        --keep="landuse=residential =farmyard" \
+        --keep="landuse" \
         --keep="type=boundary boundary=administrative" \
         --keep="highway" \
+        --keep="leisure=park =pitch =playground =sports_centre =garden" \
+        --keep="amenity=parking =kindergarten =university" \
+        --keep="natural=water" \
         -o=data/$REGION-filtered.o5m
 fi
 echo ">>> Import filtered OSM data into PostGIS database"
