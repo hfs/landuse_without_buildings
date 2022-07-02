@@ -49,10 +49,13 @@ CREATE INDEX ON landuse_trimmed USING GIST(geom);
 -- pseudo-squaremeters to pseudo-squaremeters on a local scale.
 -- UPDATE and adding a column will rewrite the table anyway. It's faster to
 -- create a new table.
+--
+-- Need to add a "0 buffer" trick to fix some invalid geometries after
+-- subtracting. Otherwise any of the next steps might fail randomly.
 BEGIN;
     CREATE TABLE landuse_area AS
         SELECT area_id, landuse, ST_Area(ST_Transform(geom, 3035)) AS area,
-        ST_Transform(geom, 3035) AS geom FROM landuse_trimmed;
+        ST_Buffer(ST_Transform(geom, 3035), 0) AS geom FROM landuse_trimmed;
     ALTER TABLE landuse_area ADD PRIMARY KEY (area_id);
     CREATE INDEX ON landuse_area USING GIST(geom);
     DROP TABLE landuse_trimmed;
