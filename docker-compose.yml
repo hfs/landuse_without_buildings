@@ -9,8 +9,9 @@ services:
     image: "postgis/postgis:14-3.2"
     ports:
       - "5432:5432"
-    command: postgres -c shared_buffers=2GB -c work_mem=64MB
+    command: postgres -c shared_buffers=2GB -c work_mem=32MB
     environment:
       POSTGRES_PASSWORD: "postgres"
+    shm_size: 1024m
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
