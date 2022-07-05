@@ -53,8 +53,8 @@ function osm2pgsql.process_way(object)
     if object.tags.highway then
         tables.highway:add_row{ highway = object.tags.highway }
     end
-    if object.tags.leisure or object.tags.amenity or object.tags.water then
-        kind = object.tags.leisure or object.tags.amenity or object.tags.water
+    if object.tags.leisure or object.tags.amenity or object.tags.natural then
+        kind = object.tags.leisure or object.tags.amenity or object.tags.natural
         row = { geom = { create = 'area' }, kind = kind }
         tables.unwanted:add_row(row)
     end
@@ -78,8 +78,8 @@ function osm2pgsql.process_relation(object)
         }
         tables.administrative:add_row(row)
     end
-    if object.tags.type == 'multipolygon' and (object.tags.leisure or object.tags.amenity or object.tags.water) then
-        kind = object.tags.leisure or object.tags.amenity or object.tags.water
+    if object.tags.type == 'multipolygon' and (object.tags.leisure or object.tags.amenity or object.tags.natural) then
+        kind = object.tags.leisure or object.tags.amenity or object.tags.natural
         row = { geom = { create = 'area' }, kind = kind }
         tables.unwanted:add_row(row)
     end
