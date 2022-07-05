@@ -16,7 +16,6 @@ SELECT area_id, landuse, geom  FROM landuse
 WHERE landuse NOT IN ('residential', 'farmyard')
 UNION ALL
 SELECT area_id, kind AS unwanted, geom  FROM unwanted
--- TODO Add highway=footway, highway=pedestrian with area=yes as unwanted
 ;
 CREATE INDEX ON landuse_unwanted USING GIST(geom);
 
@@ -294,6 +293,20 @@ WHERE
     l.id = t.id AND
     t.label = m.label AND
     l.id != m.max_id
+;
+
+-- Using a temporary table was way faster than a sub-select
+CREATE TABLE germany AS
+    SELECT ST_Transform(geom, 3035) AS geom
+    FROM administrative
+    WHERE admin_level='2' AND "name"='Deutschland'
+;
+CREATE INDEX ON germany USING GIST(geom);
+
+DELETE
+FROM landuse_split l
+USING germany g
+WHERE NOT ST_Intersects(l.geom, g.geom)
 ;
 
 \echo >>> Calculate area of polygons
