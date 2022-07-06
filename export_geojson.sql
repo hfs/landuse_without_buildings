@@ -12,7 +12,7 @@ FROM (
         ST_ForceRHR(ST_Transform(geom, 4326)) AS geom
     FROM landuse_split
     WHERE
-        building_fraction <= 0.05
+        building_fraction <= 0.04
     ORDER BY id
 ) u
 ;
