@@ -295,20 +295,6 @@ WHERE
     l.id != m.max_id
 ;
 
--- Using a temporary table was way faster than a sub-select
-CREATE TABLE germany AS
-    SELECT ST_Transform(geom, 3035) AS geom
-    FROM administrative
-    WHERE admin_level='2' AND "name"='Deutschland'
-;
-CREATE INDEX ON germany USING GIST(geom);
-
-DELETE
-FROM landuse_split l
-USING germany g
-WHERE NOT ST_Intersects(l.geom, g.geom)
-;
-
 \echo >>> Calculate area of polygons
 
 ALTER TABLE landuse_split ADD COLUMN area float;
@@ -420,6 +406,24 @@ BEGIN
 END;
 $loopBody$ LANGUAGE plpgsql
 ;
+
+\echo >>> Delete any areas outside Germany
+
+-- Using a temporary table was way faster than a sub-select
+CREATE TABLE germany AS
+    SELECT ST_Transform(geom, 3035) AS geom
+    FROM administrative
+    WHERE admin_level='2' AND "name"='Deutschland'
+;
+CREATE INDEX ON germany USING GIST(geom);
+
+DELETE
+FROM landuse_split l
+USING germany g
+WHERE NOT ST_Intersects(l.geom, g.geom)
+;
+
+
 
 \echo >>> Regenerate IDs after removals
 
