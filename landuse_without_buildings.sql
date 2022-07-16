@@ -96,28 +96,6 @@ BEGIN;
     ALTER TABLE highway_reprojected RENAME TO highway;
 COMMIT;
 
-\echo >>> Filter landuse from previous projects
-
--- Any polygon that has already been looked at in previous projects should not
--- be presented to MapRoulette users again.
-
-DROP TABLE IF EXISTS blacklist;
-CREATE TABLE blacklist (id text);
-\COPY blacklist FROM 'landuse_blacklist.csv' (FORMAT CSV, HEADER)
-ALTER TABLE blacklist ADD COLUMN area_id bigint;
-UPDATE blacklist SET area_id =
-  CASE
-    WHEN id LIKE '%/way/%'
-      THEN CAST(regexp_replace(id, '.*/', '') AS bigint)
-    WHEN id LIKE '%/relation/%'
-      THEN - CAST(regexp_replace(id, '.*/', '') AS bigint)
-  END
-;
-DELETE FROM landuse_trimmed l
-USING blacklist b
-WHERE l.area_id = b.area_id
-;
-
 \echo >>> Split landuse areas by highways
 
 DROP TABLE IF EXISTS landuse_split CASCADE;
