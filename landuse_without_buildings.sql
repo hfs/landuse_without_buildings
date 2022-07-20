@@ -1,57 +1,100 @@
-\echo >>> Calculate area of landuse
+\echo >>> Keep only residential landuse
 
-ALTER TABLE landuse DROP COLUMN IF EXISTS area;
-ALTER TABLE landuse ADD COLUMN area float;
-UPDATE landuse SET area = ST_Area(geom);
+-- There are many residential landuse areas that are large and that are
+-- overlapped by parks, forests, etc. We need to subtract them first.
 
-\echo >>> Calculate area of buildings
+DROP TABLE IF EXISTS landuse_residential;
+CREATE TABLE landuse_residential AS
+SELECT area_id, landuse, geom FROM landuse
+WHERE landuse IN ('residential', 'farmyard')
+;
+CREATE INDEX ON landuse_residential USING GIST(geom);
+
+DROP TABLE IF EXISTS landuse_unwanted;
+CREATE TABLE landuse_unwanted AS
+SELECT area_id, landuse, geom  FROM landuse
+WHERE landuse NOT IN ('residential', 'farmyard')
+UNION ALL
+SELECT area_id, kind AS unwanted, geom  FROM unwanted
+;
+CREATE INDEX ON landuse_unwanted USING GIST(geom);
+
+DROP TABLE IF EXISTS landuse_trimmed;
+CREATE TABLE landuse_trimmed AS
+SELECT
+    area_id,
+    landuse,
+    COALESCE(
+        ST_Difference(
+            l.geom,
+            unwanted.geom
+        ),
+        l.geom
+    ) geom
+FROM landuse_residential l
+CROSS JOIN LATERAL
+(
+    SELECT ST_Union(u.geom) AS geom
+    FROM landuse_unwanted u
+    WHERE ST_Intersects(l.geom, u.geom) 
+) unwanted
+;
+CREATE INDEX ON landuse_trimmed USING GIST(geom);
+
+\echo >>> Reproject landuse and calculate area
 
 -- This takes way too long when using geography, so instead use LAEA
 -- pseudo-meters. Should be good enough when only looking at the ratio of
 -- pseudo-squaremeters to pseudo-squaremeters on a local scale.
 -- UPDATE and adding a column will rewrite the table anyway. It's faster to
 -- create a new table.
+--
+-- Need to add a "0 buffer" trick to fix some invalid geometries after
+-- subtracting. Otherwise any of the next steps might fail randomly.
 BEGIN;
-    ALTER TABLE building DROP COLUMN IF EXISTS area;
+    CREATE TABLE landuse_area AS
+        SELECT area_id, landuse, ST_Area(ST_Transform(geom, 3035)) AS area,
+        ST_Buffer(ST_Transform(geom, 3035), 0) AS geom FROM landuse_trimmed;
+    ALTER TABLE landuse_area ADD PRIMARY KEY (area_id);
+    CREATE INDEX ON landuse_area USING GIST(geom);
+    DROP TABLE landuse_trimmed;
+    ALTER TABLE landuse_area RENAME TO landuse_trimmed;
+COMMIT;
+
+\echo >>> Reproject buildings and calculate area
+
+BEGIN;
     CREATE TABLE building_area AS
-        SELECT *, ST_Area(geom) AS area FROM building;
+        SELECT area_id, building, ST_Area(ST_Transform(geom, 3035)) AS area,
+        ST_Transform(geom, 3035) AS geom FROM building;
     ALTER TABLE building_area ADD PRIMARY KEY (area_id);
     CREATE INDEX ON building_area USING GIST(geom);
     DROP TABLE building;
     ALTER TABLE building_area RENAME TO building;
 COMMIT;
 
-\echo >>> Filter landuse with "too few" buildings
+\echo >> Delete highways that should not be used for splitting, especially footways and cycleways
 
-DROP TABLE IF EXISTS landuse_with_few_buildings;
-CREATE TABLE landuse_with_few_buildings AS
-    WITH germany AS (
-        SELECT geom
-        FROM administrative
-        WHERE
-            admin_level = '2' AND
-            name = 'Deutschland'
-    )
-    SELECT
-        l.area_id,
-        l.landuse,
-        l.area,
-        SUM(b.area) / l.area AS building_fraction,
-        l.geom
-    FROM
-        germany g,
-        landuse l
-        CROSS JOIN LATERAL (
-            SELECT * FROM building b WHERE ST_Intersects(l.geom, b.geom)
-        ) b
-    WHERE
-        l.landuse = 'residential' AND
-        l.area > 25000 AND
-        ST_Within(l.geom, g.geom)
-    GROUP BY l.area_id, l.landuse, l.area, l.geom
-    HAVING SUM(b.area) / l.area < 0.05
+-- Using a positive list, as there are many weird values
+DELETE FROM highway
+WHERE highway NOT IN (
+    'motorway', 'motorway_link', 'trunk', 'trunk_link',
+    'primary', 'primary_link', 'secondary', 'secondary_link',
+    'tertiary', 'tertiary_link', 'unclassified', 'residential', 'service',
+    'track', 'living_street', 'road', 'busway'
+)
 ;
-CREATE INDEX ON landuse_with_few_buildings USING GIST(geom);
+
+\echo >>> Reproject highways
+
+BEGIN;
+    CREATE TABLE highway_reprojected AS
+      SELECT way_id, highway, ST_Transform(geom, 3035) AS geom FROM highway;
+    ALTER TABLE highway_reprojected ADD PRIMARY KEY (way_id);
+    CREATE INDEX ON highway_reprojected USING GIST(geom);
+    DROP TABLE highway;
+    ALTER TABLE highway_reprojected RENAME TO highway;
+COMMIT;
 
 \echo >>> Split landuse areas by highways
 
@@ -67,10 +110,11 @@ WITH split AS (
       (ST_Dump(ST_Split(l.geom, ST_Collect(h.geom)))).geom,
       ST_Centroid(l.geom) AS centroid
     FROM
-      landuse_with_few_buildings l
+      landuse_trimmed l
       CROSS JOIN LATERAL (
         SELECT * FROM highway h WHERE ST_Intersects(l.geom, h.geom)
       ) h
+    WHERE l.area >= 25000
     GROUP BY l.area_id, l.geom
     UNION ALL
     SELECT
@@ -82,9 +126,10 @@ WITH split AS (
         l.geom,
         ST_Centroid(l.geom) AS centroid
     FROM
-        landuse_with_few_buildings l
+        landuse_trimmed l
         LEFT JOIN highway h ON ST_Intersects(l.geom, h.geom)
     WHERE
+        l.area >= 25000 AND
         h.geom IS NULL
 )
 SELECT
@@ -93,6 +138,7 @@ SELECT
     s.geom
 FROM split s
 ;
+ALTER TABLE landuse_split ADD PRIMARY KEY (id);
 CREATE INDEX ON landuse_split(osm_id);
 CREATE INDEX ON landuse_split USING GIST(geom);
 VACUUM ANALYZE landuse_split;
@@ -124,12 +170,12 @@ FROM
             WHERE
                 -- coming from the same source OSM area
                 a.osm_id = b.osm_id AND
-                -- Shared boundary line
+                -- Shared boundary line, but not just a corner
                 ST_Relate(a.geom, b.geom, 'FF2F1*212')
         ) b
         WHERE
             -- Requires PostGIS >= 3.1
-            (ST_MaximumInscribedCircle(a.geom)).radius < 50
+            (ST_MaximumInscribedCircle(a.geom)).radius < 30
      ) all_neighbors
 WHERE
     neighbor_rank = 1;
@@ -144,11 +190,14 @@ CREATE TABLE transitive_group (
     id INTEGER PRIMARY KEY,
     label INTEGER NOT NULL DEFAULT 0
 );
+CREATE INDEX ON transitive_group(label);
 DO $funcBody$
     DECLARE
         label1 integer;
         label2 integer;
         nextlabel integer;
+        loop_counter integer;
+        total_count integer;
         pair sliver_neighbor%rowtype;
     BEGIN
         DELETE FROM transitive_group;
@@ -156,8 +205,15 @@ DO $funcBody$
             SELECT DISTINCT unnest(array[id_small_poly, id_neighbor])
             FROM sliver_neighbor ORDER BY 1;
         nextlabel := 0;
+        loop_counter := 0;
+        SELECT COUNT(*) INTO total_count FROM sliver_neighbor;
         FOR pair IN SELECT * FROM sliver_neighbor
         LOOP
+            IF loop_counter % 10000 = 0 THEN
+                RAISE NOTICE '>>>   Sliver neighbors progress: % %%',
+            (loop_counter::double precision / total_count * 100.0)::int;
+            END IF;
+            loop_counter := loop_counter + 1;
             SELECT label INTO label1 FROM transitive_group WHERE id = pair.id_small_poly;
             SELECT label INTO label2 FROM transitive_group WHERE id = pair.id_neighbor;
             IF label1 = 0 AND label2 = 0 THEN
@@ -166,10 +222,10 @@ DO $funcBody$
                 UPDATE transitive_group SET label = nextlabel WHERE id in (pair.id_small_poly, pair.id_neighbor);
             ELSIF label1 = 0 AND label2 != 0 THEN
                 -- One of them seen: Assign the same label to the other one
-                UPDATE transitive_group SET label = label2 WHERE ID = pair.id_small_poly;
+                UPDATE transitive_group SET label = label2 WHERE id = pair.id_small_poly;
             ELSIF label1 != 0 AND label2 = 0 THEN
                 -- One of them seen: Assign the same label to the other one
-                UPDATE transitive_group SET label = label1 WHERE ID = pair.id_neighbor;
+                UPDATE transitive_group SET label = label1 WHERE id = pair.id_neighbor;
             ELSIF label1 != label2 THEN
                 -- Found the connection between two groups: Merge them
                 UPDATE transitive_group SET label = label1 WHERE label = label2;
@@ -178,8 +234,6 @@ DO $funcBody$
     END;
 $funcBody$ LANGUAGE plpgsql;
 
-CREATE INDEX ON transitive_group(label);
-
 DROP TABLE IF EXISTS max_per_group;
 CREATE TABLE max_per_group AS
 SELECT max(id) AS max_id, label
@@ -187,6 +241,7 @@ FROM transitive_group t
 GROUP BY LABEL
 ;
 ALTER TABLE max_per_group ADD PRIMARY KEY (label);
+CREATE INDEX ON max_per_group(max_id);
 
 -- Now merge all polygons that are in the same group. Use the polygon with the
 -- largest ID (it's not important which one out of the group) and overwrite its
@@ -200,7 +255,7 @@ FROM
         SELECT m.max_id AS id, ST_Union(s.geom) AS geom
         FROM landuse_split s, transitive_group t
         WHERE
-            m.LABEL = t.LABEL AND
+            m.label = t.label AND
             t.id = s.id
         GROUP BY m.max_id
     ) merged
@@ -218,6 +273,136 @@ WHERE
     l.id != m.max_id
 ;
 
+\echo >>> Calculate area of polygons
+
+ALTER TABLE landuse_split ADD COLUMN area float;
+UPDATE landuse_split SET area = ST_Area(geom);
+
+\echo >>> Cut up too large polygons
+
+-- Add sequence to generate new, unique IDs when inserting split polygons
+CREATE SEQUENCE landuse_split_id_seq
+OWNED BY landuse_split.id
+;
+SELECT setval('landuse_split_id_seq', (SELECT MAX(id) FROM landuse_split));
+
+CREATE OR REPLACE FUNCTION split_polygon_in_half(
+    geom geometry
+)
+RETURNS geometry(Geometrycollection)
+AS $funcBody$
+DECLARE
+    bbox geometry(Linestring);
+    blade geometry(Linestring);
+    blade_elongated geometry(Linestring);
+    elongation_factor double precision := 1.5;
+BEGIN
+    SELECT ST_Boundary(ST_OrientedEnvelope(geom)) INTO bbox;
+    SELECT
+        ST_OffsetCurve(
+            ST_MakeLine( -- short edge
+                ST_PointN(bbox, 1),
+                ST_PointN(bbox, 2)
+            ),
+            ST_Distance(
+                -- long edge
+                ST_PointN(bbox, 2),
+                ST_PointN(bbox, 3)
+            ) / 2
+        )
+        INTO blade;
+    -- Need to extend the cut line in case it ends exactly on the polygon
+    -- boundary. In that case no cut would be performed.
+    SELECT
+        ST_Affine(blade,
+            elongation_factor, 0,
+            0, elongation_factor,
+            (elongation_factor - 1) * -ST_X(ST_LineInterpolatePoint(blade, 0.5)),
+            (elongation_factor - 1) * -ST_Y(ST_LineInterpolatePoint(blade, 0.5))
+        )
+        INTO blade_elongated;
+    RETURN ST_Split(geom, blade_elongated);
+END
+$funcBody$
+LANGUAGE plpgsql
+;
+
+CREATE OR REPLACE FUNCTION split_too_large_polygons()
+RETURNS void
+AS $funcBody$
+BEGIN
+    DROP TABLE IF EXISTS landuse_too_big;
+    CREATE TABLE landuse_too_big AS
+    SELECT
+        osm_id,
+        id AS original_id,
+        -- new_id doesn't have to be unique. It's only used to get a
+        -- reproducable order when regenerating the IDs in the next step.
+        id + (dump).path[1] AS new_id,
+        (dump).geom
+    FROM (
+        SELECT
+            osm_id,
+            id,
+            geom,
+            ST_Dump(split_polygon_in_half(geom)) AS dump
+        FROM landuse_split
+        WHERE area > 100000
+    ) polygon_halves
+    ;
+    DELETE FROM landuse_split s
+    USING landuse_too_big b
+    WHERE
+        s.id = b.original_id
+    ;
+    INSERT INTO landuse_split(osm_id, geom, id, area)
+    SELECT
+        osm_id,
+        geom,
+        nextval('landuse_split_id_seq') AS id,
+        ST_Area(geom) AS area
+    FROM landuse_too_big
+    ORDER BY osm_id, new_id
+    ;
+END;
+$funcBody$
+LANGUAGE plpgsql
+;
+
+-- Split too big polygons recursively, until none remain
+DO $loopBody$
+DECLARE
+    polygon_count integer;
+BEGIN
+    SELECT COUNT(*) INTO polygon_count FROM landuse_split WHERE area >= 100000;
+    WHILE polygon_count > 0
+    LOOP
+        RAISE NOTICE '>>> Polygons to split: %', polygon_count;
+        PERFORM split_too_large_polygons();
+        SELECT COUNT(*) INTO polygon_count FROM landuse_split WHERE area >= 100000;
+    END LOOP;
+END;
+$loopBody$ LANGUAGE plpgsql
+;
+
+\echo >>> Delete any areas outside Germany
+
+-- Using a temporary table was way faster than a sub-select
+CREATE TABLE germany AS
+    SELECT ST_Transform(geom, 3035) AS geom
+    FROM administrative
+    WHERE admin_level='2' AND "name"='Deutschland'
+;
+CREATE INDEX ON germany USING GIST(geom);
+
+DELETE
+FROM landuse_split l
+USING germany g
+WHERE NOT ST_Intersects(l.geom, g.geom)
+;
+
+
+
 \echo >>> Regenerate IDs after removals
 
 ALTER TABLE landuse_split ADD COLUMN new_id text;
@@ -234,10 +419,8 @@ ALTER TABLE landuse_split DROP COLUMN id CASCADE;
 ALTER TABLE landuse_split RENAME COLUMN new_id TO id;
 ALTER TABLE landuse_split ADD PRIMARY KEY(id);
 
-\echo >>> Re-intersect with buildings after merging to get the area fraction
+\echo >>> Intersect with buildings to get the area fraction
 
-ALTER TABLE landuse_split ADD COLUMN area float;
-UPDATE landuse_split SET area = ST_Area(geom);
 ALTER TABLE landuse_split ADD COLUMN building_fraction float;
 UPDATE landuse_split l
 SET building_fraction = f.building_fraction
@@ -255,38 +438,34 @@ WHERE l.id = f.id
 ;
 UPDATE landuse_split SET building_fraction = 0 WHERE building_fraction IS NULL;
 
-\echo >>> Intersect with the German states to split the output files
-
-ALTER TABLE landuse_split ADD COLUMN state TEXT;
-UPDATE landuse_split l
-    SET state = state.name
-    FROM (
-        SELECT DISTINCT ON (l2.id)
-            l2.id,
-            a.name
-        FROM
-            landuse_split l2,
-            administrative a
-        WHERE
-            a.admin_level = '4' AND
-            ST_Intersects(l2.geom, a.geom)
-        ORDER BY
-            l2.id
-    ) state
-    WHERE
-        l.id = state.id
-;
-
-\echo >>> Number of landuse areas by building fraction:
+\echo >>> Number of landuse areas by area and building fraction:
 
 SELECT
-    COUNT(*) FILTER (WHERE building_fraction = 0) AS "building_fraction = 0",
-    COUNT(*) FILTER (
-        WHERE building_fraction > 0 AND
-        building_fraction <= 0.05
-    ) AS "0 < building_fraction ≤ 5 %",
-    COUNT(*) FILTER (WHERE building_fraction > 0.05) AS "building_fraction > 5 %"
-FROM landuse_split
+    CASE
+        WHEN area_rounded >= 100000 THEN '≥ 100,000'
+        ELSE to_char(area_rounded, '999,999')
+    END AS "area [m²]",
+    CASE
+        WHEN building_fraction_rounded >= 0.1 THEN '≥ 10 %'
+        ELSE ROUND(building_fraction_rounded * 100) || ' %'
+    END AS building_fraction,
+    COUNT(*)
+FROM (
+    SELECT
+        CASE
+            WHEN area > 100000 THEN 100000
+            ELSE floor(area / 5000) * 5000
+        END AS area_rounded,
+        CASE
+            WHEN building_fraction > 0.1 THEN 0.1
+            ELSE floor(building_fraction / 0.01) * 0.01
+        END AS building_fraction_rounded
+    FROM
+        landuse_split ls
+) rounded
+GROUP BY area_rounded, building_fraction_rounded
+ORDER BY area_rounded, building_fraction_rounded
+\crosstabview
 ;
 
 \echo >>> Median size of landuse areas with building fraction = 0:
@@ -294,13 +473,4 @@ FROM landuse_split
 SELECT percentile_cont(0.5) WITHIN GROUP(ORDER BY area) AS median
 FROM landuse_split
 WHERE building_fraction = 0
-;
-
-\echo >>> Landuse areas per state
-
-SELECT state, COUNT(*)
-FROM landuse_split l
-WHERE l.building_fraction <= 0.05
-GROUP BY state
-ORDER BY count
 ;
