@@ -57,34 +57,75 @@ how much of a land use area is covered by buildings.
 The assumption is that at least X % of residential land use areas is covered by
 buildings.
 
-The input data looks like this:
+The processing starts from the residential land use areas:
 
-![Map of land use areas and buildings](doc/landuse_buildings.jpg)
+![Map of one residential land use polygon](doc/landuse_residential.jpg)
 
-The orange and purple areas are residential land use areas. Light red are
-buildings. Orange areas are land use areas which are covered less than 5 % by
-buildings. They are processed further to eventually become challenge tasks.
-Purple areas contain more than 5 % buildings and are not further analyzed in
-this challenge.
+A lot of residential land use areas in OpenStreetMap are overlapped by other
+areas. You can often find one residential polygon encompassing a whole village
+or city district which is then overlapped by school grounds, parks, sports
+areas and so on. As the latter type of areas won't contain residential houses,
+they should be excluded from the analysis.
+
+After subtracting the unwanted areas it may look like this:
+
+![Map of one residential land use after subtracting unwanted overlapping areas](doc/landuse_trimmed.jpg)
+
+The next step is to split the large areas into smaller parts. Some part of the
+area may already be mapped with buildings while they are still missing in other
+parts. Also the mapping tasks should be small and quick to solve and not
+contain hundreds of buildings to draw.
+
+Overlay the street network and split the land use areas by the street.
+
+This step can create a lot of small, narrow polygons, especially between
+separated lanes of streets that are mapped as two lines in OpenStreetMap. These
+narrow polygons are detected and merged with their neighbors.
 
 ![Map of land use areas split by streets](doc/landuse_split.jpg)
 
-Many land use areas are very large and can contain tens or hundreds of
-buildings. It’s very daunting for mappers having to map so many buildings just
-for one task. That’s why the land use areas are cut up by the roads crossing
-them.
+Now overlay the buildings that are already mapped:
 
-For each block, the coverage by buildings is calculated again. In the map
-image, red blocks contain zero buildings, orange blocks less than 5 % and
-yellow ones 5 % or more. Only the blocks with up to 5 % building coverage
-become tasks and those with more are discarded.
+![Map of land use areas split into blocks, overlay with buildings](doc/landuse_buildings.jpg)
 
-### [05_export_csv.sh](05_export_csv.sh) – CSV export
+For each block, the area covered by buildings is calculated.
+
+![Map of land use areas split into blocks, overlay with buildings](doc/building_coverage.jpg)
+
+Blocks in pink don’t contain any buildings. Blocks from orange to green contain
+a few buildings that cover up to 4 %. Blue blocks contain 4 % or more
+buildings.
+
+All blocks with 0 % to 4 % building coverage become tasks in MapRoulette.
+
+
+### [05_fetch_old_challenges.py](05_fetch_old_challenges.py)
+
+A similar challenge was already run with
+[v2](https://github.com/hfs/landuse_without_buildings/tree/2.2.0)
+of the code. Mappers should not presented with tasks that were aready dealt
+with in the previous run by either fixing them or marking them as invalid.
+
+The polygons and results of the previous run are fetched from MapRoulette.
+
+
+### [06_import_old_challenges.sh](06_import_old_challenges.sh)
+
+Import the old challenges into the same database.
+
+
+### [07_subtract_old_challenges.sh](07_subtract_old_challenges.sh)
+
+Remove any tasks were already touched in a previous version and marked as fixed
+or invalid.
+
+
+### [08_export_csv.sh](08_export_csv.sh) – CSV export
 
 This is an export for people who don’t want to use MapRoulette, but check one
 county or state systematically.
 
-### [06_export_geojson.sh](06_export_geojson.sh) – GeoJSON export
+### [09_export_geojson.sh](09_export_geojson.sh) – GeoJSON export
 
 Export the land use polygon as geometry in GeoJSON format that can be uploaded
 in MapRoulette.
@@ -93,9 +134,17 @@ Each one of the polygons is presented as mapping task to the MapRoulette
 contributors. They will use satellite/aerial imagery to see the buildings and
 then draw their outlines.
 
-![MapRoulette screenshot](doc/maproulette.jpg)
+![MapRoulette overview screenshot](doc/maproulette_overview.jpg)
 
-### [07_upload_results.sh](07_upload_results.sh) – Upload output
+As you can see the polygons shown above become tasks in MapRoulette.
+
+![MapRoulette single task view](doc/maproulette_task.jpg)
+
+When selecting a single tasks the mapper can open the area in an editor to map
+the buildings, or can skip the task or mark it as invalid.
+
+
+### [10_upload_results.sh](10_upload_results.sh) – Upload output
 
 This is a convenience script for myself to upload updated versions of the
 output files as GitHub gist, from where they will be pulled by MapRoulette. The
@@ -103,13 +152,14 @@ data should be refreshed every few weeks, to account for changes done by other
 mappers outside of MapRoulette. If the data gets stale, it becomes frustrating
 for MapRoulette users to get assigned tasks where nothing is left to do.
 
-### [08_maproulette_refresh.py](08_maproulette_refresh.py) – Update MapRoulette challenges
+### [11_maproulette_refresh.py](11_maproulette_refresh.py) – Update MapRoulette challenges
 
 Convenience script to refresh the MapRoulette challenge from the uploaded data.
 
-### [09_challenge_status.py](09_challenge_status.py) – Export challenge status as CSV
+### [12_challenge_status.py](12_challenge_status.py) – Export challenge status
 
-Export data about completed tasks as CSV for further evaluation of the challenge progress.
+Export data about completed tasks as in formatting suitable for the
+OpenStreetMap forum.
 
 
 ## How to run the analysis yourself
@@ -134,11 +184,11 @@ The output files are `data/*.geojson`.
 
 ### Running manually
 
-Install PostgreSQL, PostGIS ≥ 3.1, `osm2pgsql`, `osmconvert` and `osmfilter`
-(package `osmctools`) and `npm`.
+Install PostgreSQL, PostGIS ≥ 3.1, `osm2pgsql`, `osmconvert`. `osmfilter`
+(package `osmctools`), `ogr2ogr` (package `gdal-bin`) and `npm`.
 
-Install [geojson-rewind](https://github.com/mapbox/geojson-rewind)
-using `npm install -g @mapbox/geojson-rewind`.
+Install [geojson-rewind](https://github.com/mapbox/geojson-rewind) using `npm
+install -g @mapbox/geojson-rewind`.
 
 Edit `env.sh` to set the PostgreSQL credentials.
 
