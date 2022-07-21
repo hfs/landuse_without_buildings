@@ -10,7 +10,7 @@ git commit -m "Update with data from $DATE"
 git push
 popd
 
-mv -f data/[A-Z]*.geojson ../landuse_without_buildings_geojson/
+mv -f data/landuse_without_buildings.geojson ../landuse_without_buildings_geojson/
 pushd ../landuse_without_buildings_geojson/
 git add -u
 git commit -m "Update with data from $DATE"
