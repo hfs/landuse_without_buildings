@@ -2,7 +2,7 @@
 set -o pipefail
 source env.sh
 
-BUILDING_VALUES="=yes =house =residential =apartments =detached =terrace =semidetached_house =static_caravan =bungalow =semi =dormitory =stilt_house =terraced_house =dwelling_house =chalet =summer_cottage =flats =semi-detached =row_house =summer_house =semi_detached =townhouse =houses =hospital =construction =farm =barn =conservatory =cowshed =farm_auxiliary =greenhouse =slurry_tank =stable =sty"
+BUILDING_VALUES="=yes =house =residential =apartments =detached =terrace =semidetached_house =static_caravan =bungalow =semi =dormitory =stilt_house =terraced_house =dwelling_house =chalet =summer_cottage =flats =semi-detached =row_house =summer_house =semi_detached =townhouse =houses =garage =garages =hospital =construction =farm =barn =conservatory =cowshed =farm_auxiliary =greenhouse =slurry_tank =stable =sty"
 
 if [ data/$REGION-latest.osm.pbf -nt data/$REGION-latest.o5m ]; then
     echo ">>> Convert OSM dump into O5M format for filtering"
