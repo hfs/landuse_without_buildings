@@ -26,7 +26,7 @@ if [ data/$REGION-latest.o5m -nt data/$REGION-filtered.o5m ]; then
         --keep="highway" \
         --keep="leisure=park =pitch =playground =sports_centre =garden" \
         --keep="amenity=parking =kindergarten =university" \
-        --keep="natural=water" \
+        --keep="natural" \
         -o=data/$REGION-filtered.o5m
 fi
 echo ">>> Import filtered OSM data into PostGIS database"
