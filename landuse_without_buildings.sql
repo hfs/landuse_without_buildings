@@ -462,6 +462,8 @@ FROM (
         END AS building_fraction_rounded
     FROM
         landuse_split ls
+    WHERE
+        area >= 500
 ) rounded
 GROUP BY area_rounded, building_fraction_rounded
 ORDER BY area_rounded, building_fraction_rounded

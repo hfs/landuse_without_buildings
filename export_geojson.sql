@@ -13,7 +13,7 @@ FROM (
     FROM landuse_split
     WHERE
         building_fraction <= 0.04 AND
-	area >= 500
+        area >= 500
     ORDER BY id
 ) u
 ;
