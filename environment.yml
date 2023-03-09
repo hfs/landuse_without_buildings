@@ -1,0 +1,21 @@
+name: landuse_without_buildings
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.10
+  - pandas
+  - h3-py
+  - geopandas
+  - tqdm
+  - requests
+  - requests_cache
+  - sqlite
+  - libpysal
+  - tabulate
+  - plotly
+  - nbformat
+  - seaborn
+  - pip
+  - pip:
+    - maproulette
